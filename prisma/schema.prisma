@@ -1,0 +1,39 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  username     String   @unique
+  email        String   @unique
+  passwordHash String   @map("password_hash") // Stores the hashed password
+  createdAt    DateTime @default(now()) @map("created_at")
+  tasks        Task[]   // A user can have many tasks
+
+  @@map("users") // Maps this model to the 'users' table in your database
+}
+
+model Task {
+  id        Int      @id @default(autoincrement())
+  title     String
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  userId    Int      // Foreign key to link to the User model
+  user      User     @relation(fields: [userId], references: [id]) // Defines the relation
+
+  @@map("tasks") // Maps this model to the 'tasks' table in your database
+}
+
