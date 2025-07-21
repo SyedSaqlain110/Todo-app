@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useEffect, useState, FC } from 'react';
-import { useRouter } from 'next/navigation'; // For programmatic redirection
-import Link from 'next/link'; // For logout link (or other navigation)
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
-// Define types for data structures (repeated for clarity in this file)
+// Define types for data structures
 interface UserData {
   id: number;
   name: string;
@@ -16,66 +16,54 @@ interface Task {
   id: number;
   title: string;
   completed: boolean;
-  createdAt: string; // Date string from backend
+  isImportant: boolean; // This field is now used
+  createdAt: string;
   userId: number;
 }
 
-// Define a type for the possible views within the Todo app itself
 type TodoAppView = 'all' | 'important' | 'completed';
 
 const TodosPage: FC = () => {
   const router = useRouter();
 
-  // State for authenticated user data (from localStorage)
   const [user, setUser] = useState<UserData | null>(null);
-  // State for the list of tasks fetched from the backend
   const [tasks, setTasks] = useState<Task[]>([]);
-  // State for the input field when adding a new task
   const [newTaskTitle, setNewTaskTitle] = useState<string>('');
-  // State for initial loading (checking auth, fetching initial tasks)
   const [loading, setLoading] = useState<boolean>(true);
-  // State for showing a loading indicator specifically when adding a task
   const [addingTask, setAddingTask] = useState<boolean>(false);
-  // State for displaying success or error messages to the user
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  // State to manage the currently selected view in the sidebar (e.g., All, Important, Completed)
-  const [currentTodoView, setCurrentTodoView] = useState<TodoAppView>('all'); // Initialize to 'all' tasks
+  const [currentTodoView, setCurrentTodoView] = useState<TodoAppView>('all');
 
   // --- useEffect for Authentication Check and Initial Task Fetch ---
   useEffect(() => {
     const loadUserDataAndTasks = async () => {
-      setLoading(true); // Start initial loading indicator
-      setMessage(null); // Clear any previous messages
+      setLoading(true);
+      setMessage(null);
 
-      // Crucial check: Ensure this code runs only in the browser environment
       if (typeof window === 'undefined') {
-        router.push('/login'); // If somehow on server, redirect
+        router.push('/login');
         return;
       }
 
-      const storedUser = localStorage.getItem('user'); // Attempt to retrieve user data from localStorage
-
-      if (storedUser) { // If user data is found
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
         try {
           const parsedUser: UserData = JSON.parse(storedUser);
-          setUser(parsedUser); // Set the user state
-
-          // Fetch tasks for the logged-in user immediately after user data is loaded
+          setUser(parsedUser);
           await fetchTasks(parsedUser.id);
         } catch (e) {
           console.error("Failed to parse user data from localStorage or fetch tasks", e);
-          localStorage.removeItem('user'); // Clear corrupted data
-          router.push('/login'); // Redirect to login page
+          localStorage.removeItem('user');
+          router.push('/login');
         }
       } else {
-        // If no user data found in localStorage, user is not authenticated
-        router.push('/login'); // Redirect unauthenticated user to the login page
+        router.push('/login');
       }
-      setLoading(false); // End initial loading
+      setLoading(false);
     };
 
-    loadUserDataAndTasks(); // Call the async function
-  }, [router]); // Dependency array: useEffect runs when 'router' object changes (typically once on mount)
+    loadUserDataAndTasks();
+  }, [router]);
 
   // --- Function to Fetch Tasks from the Backend API ---
   const fetchTasks = async (userId: number) => {
@@ -86,7 +74,7 @@ const TodosPage: FC = () => {
       });
       const data = await response.json();
       if (response.ok) {
-        setTasks(data); // Set the tasks state with the fetched data (array of Task objects)
+        setTasks(data);
       } else {
         setMessage({ type: 'error', text: data.message || 'Failed to fetch tasks.' });
       }
@@ -98,40 +86,34 @@ const TodosPage: FC = () => {
 
   // --- Handler for Adding a New Task ---
   const handleAddTask = async (e: React.FormEvent) => {
-    e.preventDefault(); // Prevent default form submission (page reload)
-    setMessage(null); // Clear any previous messages
-    setAddingTask(true); // Activate adding task loading state
+    e.preventDefault();
+    setMessage(null);
+    setAddingTask(true);
 
-    // Client-side validation for the new task title
     if (!newTaskTitle.trim()) {
       setMessage({ type: 'error', text: 'Task title cannot be empty.' });
       setAddingTask(false);
       return;
     }
-
-    // Safeguard: Ensure user is logged in before attempting to add a task
     if (!user) {
       setMessage({ type: 'error', text: 'User not logged in. Please refresh or log in again.' });
       setAddingTask(false);
-      router.push('/login'); // Redirect if user somehow becomes null
+      router.push('/login');
       return;
     }
 
     try {
-      // Make a POST request to the backend API to add a new task
       const response = await fetch('/api/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Send the task title and the current user's ID
         body: JSON.stringify({ title: newTaskTitle, userId: user.id }),
       });
 
-      const data = await response.json(); // Parse the JSON response from the backend
+      const data = await response.json();
 
       if (response.ok) {
         setMessage({ type: 'success', text: 'Task added successfully!' });
-        setNewTaskTitle(''); // Clear the input field after successful addition
-        // Re-fetch all tasks to update the list with the newly added task
+        setNewTaskTitle('');
         await fetchTasks(user.id);
       } else {
         setMessage({ type: 'error', text: data.message || 'Failed to add task.' });
@@ -140,29 +122,94 @@ const TodosPage: FC = () => {
       console.error('Network error adding task:', error);
       setMessage({ type: 'error', text: 'An unexpected error occurred while adding task.' });
     } finally {
-      setAddingTask(false); // Deactivate adding task loading state
+      setAddingTask(false);
     }
   };
 
+  // --- Handler for Toggling Task Completion ---
+  const handleToggleComplete = async (taskId: number, currentCompletedStatus: boolean) => {
+    setMessage(null);
+    if (!user) {
+      setMessage({ type: 'error', text: 'User not logged in. Cannot update task.' });
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/todos/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          completed: !currentCompletedStatus, // Toggle the status
+          userId: user.id, // Send userId for authorization check on backend
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMessage({ type: 'success', text: 'Task updated successfully!' });
+        await fetchTasks(user.id); // Re-fetch tasks to get the latest state from DB
+      } else {
+        setMessage({ type: 'error', text: data.message || 'Failed to update task.' });
+      }
+    } catch (error) {
+      console.error('Network error toggling task completion:', error);
+      setMessage({ type: 'error', text: 'An unexpected error occurred while updating task.' });
+    }
+  };
+
+  // --- NEW: Handler for Toggling Task Importance ---
+  const handleToggleImportant = async (taskId: number, currentImportantStatus: boolean) => {
+    setMessage(null);
+    if (!user) {
+      setMessage({ type: 'error', text: 'User not logged in. Cannot update task importance.' });
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/todos/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isImportant: !currentImportantStatus, // Toggle the importance status
+          userId: user.id, // Send userId for authorization check on backend
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMessage({ type: 'success', text: `Task marked ${!currentImportantStatus ? 'important' : 'unimportant'}!` });
+        await fetchTasks(user.id); // Re-fetch tasks to get the latest state from DB
+      } else {
+        setMessage({ type: 'error', text: data.message || 'Failed to update task importance.' });
+      }
+    } catch (error) {
+      console.error('Network error toggling task importance:', error);
+      setMessage({ type: 'error', text: 'An unexpected error occurred while updating task importance.' });
+    }
+  };
+
+
   // --- Handler for User Logout ---
   const handleLogout = () => {
-    // Ensure code runs only in the browser environment
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('user'); // Remove user data from local storage
+      localStorage.removeItem('user');
     }
-    router.push('/login'); // Redirect to login page
+    router.push('/login');
   };
 
   // --- Function to Filter Tasks based on currentTodoView ---
   const getFilteredTasks = (): Task[] => {
     switch (currentTodoView) {
       case 'all':
-        return tasks; // Show all tasks
+        return tasks;
       case 'important':
-        // TODO: Implement 'important' logic (e.g., add an 'isImportant' field to Task model)
-        return tasks; // Placeholder: show all tasks for 'important' view until implemented
+        return tasks.filter(task => task.isImportant); // Filter by isImportant
       case 'completed':
-        return tasks.filter(task => task.completed); // Filter for completed tasks
+        return tasks.filter(task => task.completed);
       default:
         return tasks;
     }
@@ -183,7 +230,6 @@ const TodosPage: FC = () => {
   };
 
   // --- Conditional Rendering for Initial Loading ---
-  // Display a loading message while user data and tasks are being fetched
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center font-inter">
@@ -192,16 +238,14 @@ const TodosPage: FC = () => {
     );
   }
 
-  // If 'user' is null after loading, it means they were redirected by useEffect,
-  // so we return null to prevent rendering the app content briefly.
   if (!user) {
     return null;
   }
 
   return (
-    <div className="flex h-screen bg-green-50 font-inter"> {/* Overall container with a light green background */}
+    <div className="flex h-screen bg-green-50 font-inter">
       {/* Left Pane (Sidebar) */}
-      <div className="w-64 bg-green-100 p-6 flex flex-col rounded-l-lg shadow-md"> {/* Sidebar styling */}
+      <div className="w-64 bg-green-100 p-6 flex flex-col rounded-l-lg shadow-md">
         {/* Logo and Title */}
         <div className="flex items-center mb-10">
           <svg
@@ -289,13 +333,13 @@ const TodosPage: FC = () => {
       </div>
 
       {/* Right Pane (Main Content) */}
-      <div className="flex-1 bg-white p-8 flex flex-col rounded-r-lg shadow-md"> {/* Main content area styling */}
+      <div className="flex-1 bg-white p-8 flex flex-col rounded-r-lg shadow-md">
         {/* Top Bar for Main Content - Contains Title, Settings Icon, and Logout Button */}
         <div className="flex justify-between items-center mb-8">
           <h2 className="text-3xl font-semibold text-gray-700">
             {user?.name}'s {getFilteredTasks().length} {getMainContentTitle()}
           </h2>
-          <div className="flex items-center space-x-4"> {/* Group settings icon and logout button */}
+          <div className="flex items-center space-x-4">
             {/* Settings icon - Placeholder, no functionality */}
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -316,7 +360,7 @@ const TodosPage: FC = () => {
                 d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
               />
             </svg>
-            {/* Logout Button - Moved here */}
+            {/* Logout Button */}
             <button
               onClick={handleLogout}
               className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition duration-150 ease-in-out"
@@ -366,14 +410,34 @@ const TodosPage: FC = () => {
                 <input
                   type="checkbox"
                   checked={task.completed}
-                  // TODO: Implement actual toggle logic here (e.g., call a PATCH API route)
-                  onChange={() => console.log('Toggle task completion (not implemented yet)')}
+                  onChange={() => handleToggleComplete(task.id, task.completed)}
                   className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded mr-3"
                 />
                 <span className={`flex-grow text-gray-800 ${task.completed ? 'line-through text-gray-500' : ''}`}>
                   {task.title}
                 </span>
-                <span className="text-xs text-gray-400 ml-4">
+                {/* NEW: Star icon for importance */}
+                <button
+                  onClick={() => handleToggleImportant(task.id, task.isImportant)}
+                  className="ml-4 p-1 rounded-full hover:bg-yellow-100 transition-colors duration-200"
+                  aria-label={task.isImportant ? "Mark as unimportant" : "Mark as important"}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className={`h-6 w-6 ${task.isImportant ? 'text-yellow-500' : 'text-gray-400'}`}
+                    viewBox="0 0 24 24"
+                    fill={task.isImportant ? 'currentColor' : 'none'} // Fill if important
+                    stroke={task.isImportant ? 'none' : 'currentColor'} // Stroke if not important
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.324 1.144l1.519 4.674c.3.921-.755 1.688-1.539 1.144l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.544-1.839-.223-1.539-1.144l1.519-4.674a1 1 0 00-.324-1.144L2.92 8.092c-.783-.57-.38-1.81.588-1.81h4.915a1 1 0 00.95-.69l1.519-4.674z"
+                    />
+                  </svg>
+                </button>
+                <span className="text-xs text-gray-400 ml-2">
                   {new Date(task.createdAt).toLocaleDateString()}
                 </span>
               </li>

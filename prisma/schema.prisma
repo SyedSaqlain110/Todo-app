@@ -19,21 +19,21 @@ model User {
   name         String
   username     String   @unique
   email        String   @unique
-  passwordHash String   @map("password_hash") // Stores the hashed password
+  passwordHash String   @map("password_hash")
   createdAt    DateTime @default(now()) @map("created_at")
-  tasks        Task[]   // A user can have many tasks
+  tasks        Task[]
 
-  @@map("users") // Maps this model to the 'users' table in your database
+  @@map("users")
 }
 
 model Task {
-  id        Int      @id @default(autoincrement())
-  title     String
-  completed Boolean  @default(false)
-  createdAt DateTime @default(now()) @map("created_at")
-  userId    Int      // Foreign key to link to the User model
-  user      User     @relation(fields: [userId], references: [id]) // Defines the relation
+  id          Int      @id @default(autoincrement())
+  title       String
+  completed   Boolean  @default(false)
+  isImportant Boolean  @default(false) // <--- NEW FIELD: For marking tasks as important
+  createdAt   DateTime @default(now()) @map("created_at")
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
 
-  @@map("tasks") // Maps this model to the 'tasks' table in your database
+  @@map("tasks")
 }
-
