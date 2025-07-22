@@ -16,7 +16,7 @@ interface Task {
   id: number;
   title: string;
   completed: boolean;
-  isImportant: boolean; // This field is now used
+  isImportant: boolean;
   createdAt: string;
   userId: number;
 }
@@ -33,6 +33,10 @@ const TodosPage: FC = () => {
   const [addingTask, setAddingTask] = useState<boolean>(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [currentTodoView, setCurrentTodoView] = useState<TodoAppView>('all');
+
+  // NEW STATES for Edit functionality
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null); // Stores the ID of the task being edited
+  const [editedTaskTitle, setEditedTaskTitle] = useState<string>(''); // Stores the title being edited
 
   // --- useEffect for Authentication Check and Initial Task Fetch ---
   useEffect(() => {
@@ -140,8 +144,8 @@ const TodosPage: FC = () => {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          completed: !currentCompletedStatus, // Toggle the status
-          userId: user.id, // Send userId for authorization check on backend
+          completed: !currentCompletedStatus,
+          userId: user.id,
         }),
       });
 
@@ -149,7 +153,7 @@ const TodosPage: FC = () => {
 
       if (response.ok) {
         setMessage({ type: 'success', text: 'Task updated successfully!' });
-        await fetchTasks(user.id); // Re-fetch tasks to get the latest state from DB
+        await fetchTasks(user.id);
       } else {
         setMessage({ type: 'error', text: data.message || 'Failed to update task.' });
       }
@@ -159,7 +163,7 @@ const TodosPage: FC = () => {
     }
   };
 
-  // --- NEW: Handler for Toggling Task Importance ---
+  // --- Handler for Toggling Task Importance ---
   const handleToggleImportant = async (taskId: number, currentImportantStatus: boolean) => {
     setMessage(null);
     if (!user) {
@@ -173,8 +177,8 @@ const TodosPage: FC = () => {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          isImportant: !currentImportantStatus, // Toggle the importance status
-          userId: user.id, // Send userId for authorization check on backend
+          isImportant: !currentImportantStatus,
+          userId: user.id,
         }),
       });
 
@@ -182,7 +186,7 @@ const TodosPage: FC = () => {
 
       if (response.ok) {
         setMessage({ type: 'success', text: `Task marked ${!currentImportantStatus ? 'important' : 'unimportant'}!` });
-        await fetchTasks(user.id); // Re-fetch tasks to get the latest state from DB
+        await fetchTasks(user.id);
       } else {
         setMessage({ type: 'error', text: data.message || 'Failed to update task importance.' });
       }
@@ -190,6 +194,90 @@ const TodosPage: FC = () => {
       console.error('Network error toggling task importance:', error);
       setMessage({ type: 'error', text: 'An unexpected error occurred while updating task importance.' });
     }
+  };
+
+  // --- NEW: Handler for Deleting a Task ---
+  const handleDeleteTask = async (taskId: number) => {
+    setMessage(null);
+    if (!user) {
+      setMessage({ type: 'error', text: 'User not logged in. Cannot delete task.' });
+      router.push('/login');
+      return;
+    }
+
+    // Optional: Add a confirmation dialog here for better UX
+    if (!confirm('Are you sure you want to delete this task?')) {
+      return; // User cancelled deletion
+    }
+
+    try {
+      const response = await fetch(`/api/todos/${taskId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }), // Send userId for authorization check
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMessage({ type: 'success', text: 'Task deleted successfully!' });
+        await fetchTasks(user.id); // Re-fetch tasks to update the list
+      } else {
+        setMessage({ type: 'error', text: data.message || 'Failed to delete task.' });
+      }
+    } catch (error) {
+      console.error('Network error deleting task:', error);
+      setMessage({ type: 'error', text: 'An unexpected error occurred while deleting task.' });
+    }
+  };
+
+  // --- NEW: Handlers for Editing a Task ---
+  const handleEditClick = (task: Task) => {
+    setEditingTaskId(task.id); // Set the ID of the task being edited
+    setEditedTaskTitle(task.title); // Populate the input with the current title
+  };
+
+  const handleSaveEdit = async (taskId: number) => {
+    setMessage(null);
+    if (!user) {
+      setMessage({ type: 'error', text: 'User not logged in. Cannot save task.' });
+      router.push('/login');
+      return;
+    }
+    if (!editedTaskTitle.trim()) {
+      setMessage({ type: 'error', text: 'Task title cannot be empty.' });
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/todos/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editedTaskTitle.trim(), // Send the new title
+          userId: user.id, // Send userId for authorization
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMessage({ type: 'success', text: 'Task title updated successfully!' });
+        setEditingTaskId(null); // Exit edit mode
+        setEditedTaskTitle(''); // Clear edited title
+        await fetchTasks(user.id); // Re-fetch tasks
+      } else {
+        setMessage({ type: 'error', text: data.message || 'Failed to update task title.' });
+      }
+    } catch (error) {
+      console.error('Network error saving task edit:', error);
+      setMessage({ type: 'error', text: 'An unexpected error occurred while saving task.' });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTaskId(null); // Exit edit mode
+    setEditedTaskTitle(''); // Clear edited title
   };
 
 
@@ -207,7 +295,7 @@ const TodosPage: FC = () => {
       case 'all':
         return tasks;
       case 'important':
-        return tasks.filter(task => task.isImportant); // Filter by isImportant
+        return tasks.filter(task => task.isImportant);
       case 'completed':
         return tasks.filter(task => task.completed);
       default:
@@ -407,36 +495,110 @@ const TodosPage: FC = () => {
           <ul className="space-y-3">
             {getFilteredTasks().map((task) => (
               <li key={task.id} className="flex items-center bg-gray-50 p-4 rounded-md shadow-sm">
+                {/* Checkbox for completion */}
                 <input
                   type="checkbox"
                   checked={task.completed}
                   onChange={() => handleToggleComplete(task.id, task.completed)}
                   className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded mr-3"
                 />
-                <span className={`flex-grow text-gray-800 ${task.completed ? 'line-through text-gray-500' : ''}`}>
-                  {task.title}
-                </span>
-                {/* NEW: Star icon for importance */}
-                <button
-                  onClick={() => handleToggleImportant(task.id, task.isImportant)}
-                  className="ml-4 p-1 rounded-full hover:bg-yellow-100 transition-colors duration-200"
-                  aria-label={task.isImportant ? "Mark as unimportant" : "Mark as important"}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className={`h-6 w-6 ${task.isImportant ? 'text-yellow-500' : 'text-gray-400'}`}
-                    viewBox="0 0 24 24"
-                    fill={task.isImportant ? 'currentColor' : 'none'} // Fill if important
-                    stroke={task.isImportant ? 'none' : 'currentColor'} // Stroke if not important
-                    strokeWidth={2}
+
+                {/* Task Title - Conditional Rendering for Edit Mode */}
+                {editingTaskId === task.id ? (
+                  <input
+                    type="text"
+                    value={editedTaskTitle}
+                    onChange={(e) => setEditedTaskTitle(e.target.value)}
+                    onBlur={() => handleSaveEdit(task.id)} // Save on blur
+                    onKeyPress={(e) => { // Save on Enter key press
+                      if (e.key === 'Enter') {
+                        e.preventDefault(); // Prevent new line in input
+                        handleSaveEdit(task.id);
+                      }
+                    }}
+                    className="flex-grow px-2 py-1 border border-blue-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    autoFocus // Focus the input when it appears
+                  />
+                ) : (
+                  <span
+                    className={`flex-grow text-gray-800 cursor-pointer ${task.completed ? 'line-through text-gray-500' : ''}`}
+                    onDoubleClick={() => handleEditClick(task)} // Double click to edit
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.324 1.144l1.519 4.674c.3.921-.755 1.688-1.539 1.144l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.544-1.839-.223-1.539-1.144l1.519-4.674a1 1 0 00-.324-1.144L2.92 8.092c-.783-.57-.38-1.81.588-1.81h4.915a1 1 0 00.95-.69l1.519-4.674z"
-                    />
-                  </svg>
-                </button>
+                    {task.title}
+                  </span>
+                )}
+
+                {/* Action Buttons (Edit, Delete, Important) */}
+                <div className="flex items-center ml-4 space-x-2">
+                  {editingTaskId === task.id ? (
+                    <>
+                      {/* Save Button */}
+                      <button
+                        onClick={() => handleSaveEdit(task.id)}
+                        className="p-1 rounded-full text-green-600 hover:bg-green-100 transition-colors duration-200"
+                        aria-label="Save task edit"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                      {/* Cancel Button */}
+                      <button
+                        onClick={handleCancelEdit}
+                        className="p-1 rounded-full text-gray-600 hover:bg-gray-100 transition-colors duration-200"
+                        aria-label="Cancel task edit"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Edit Button */}
+                      <button
+                        onClick={() => handleEditClick(task)}
+                        className="p-1 rounded-full text-blue-600 hover:bg-blue-100 transition-colors duration-200"
+                        aria-label="Edit task"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                      {/* Star icon for importance */}
+                      <button
+                        onClick={() => handleToggleImportant(task.id, task.isImportant)}
+                        className="p-1 rounded-full hover:bg-yellow-100 transition-colors duration-200"
+                        aria-label={task.isImportant ? "Mark as unimportant" : "Mark as important"}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className={`h-6 w-6 ${task.isImportant ? 'text-yellow-500' : 'text-gray-400'}`}
+                          viewBox="0 0 24 24"
+                          fill={task.isImportant ? 'currentColor' : 'none'}
+                          stroke={task.isImportant ? 'none' : 'currentColor'}
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.324 1.144l1.519 4.674c.3.921-.755 1.688-1.539 1.144l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.544-1.839-.223-1.539-1.144l1.519-4.674a1 1 0 00-.324-1.144L2.92 8.092c-.783-.57-.38-1.81.588-1.81h4.915a1 1 0 00.95-.69l1.519-4.674z"
+                          />
+                        </svg>
+                      </button>
+                      {/* Delete Button */}
+                      <button
+                        onClick={() => handleDeleteTask(task.id)}
+                        className="p-1 rounded-full text-red-600 hover:bg-red-100 transition-colors duration-200"
+                        aria-label="Delete task"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </>
+                  )}
+                </div>
                 <span className="text-xs text-gray-400 ml-2">
                   {new Date(task.createdAt).toLocaleDateString()}
                 </span>
